@@ -21,3 +21,45 @@ This repository contains everything you need for this lab.
 - Keep this repository scoped to this lab only — no unrelated projects or personal files.
 - Use clear, descriptive filenames.
 - Remove secrets, API keys, and tokens before committing.
+
+## Run the product-listing notebook
+
+Requires Python 3.10 or newer. Run these commands from the repository root:
+
+```sh
+python -m venv .venv
+# Linux/macOS:
+. .venv/bin/activate
+# Windows PowerShell instead: .venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m jupyterlab lab_proof_Carolina.ipynb
+```
+
+Set `OPENAI_API_KEY` in your environment or in a local `.env` file. Never commit
+that file. Running the API cells requires your own API access and may incur charges.
+Run the notebook cells in order. Generated listings are written to `listings.json`;
+images are saved under `product_images/`. These outputs are not currently included
+in the repository. Historical evidence is in `lab_proof.md`.
+
+If the dataset download is unavailable, create `products.json` in this directory:
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Your actual product name",
+    "category": "Your actual product category",
+    "image_path": "images/your-product.jpg"
+  }
+]
+```
+
+Replace the sample fields and image path with real local inputs. Add more records
+as needed. Local records are normalized to the same columns as the dataset, so
+subsequent prompt and batch cells work with either source.
+
+Run regression checks without an API key or network requests:
+
+```sh
+python -m unittest discover -s tests -v
+```

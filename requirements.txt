@@ -1,0 +1,6 @@
+openai
+python-dotenv
+datasets
+pandas
+Pillow
+jupyterlab

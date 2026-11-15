@@ -16,14 +16,16 @@ Delivered by Carolina, November 2026
 
 The API key is read from a local `.env` file (listed in `.gitignore`, not committed).
 
+**Reproduction note:** The outputs below are the original recorded lab evidence, not a new verified API run. The source repository does not include the generated images or `listings.json`. The repaired notebook uses `product_listing_helpers.py`; run from the repository root. See `README.md` for setup and local fallback input.
+
 ## Files
 
 | File                                                 | What it is                                      |
 | ---------------------------------------------------- | ----------------------------------------------- |
 | `lab_proof.md`                                       | This file: entry point for the reviewer         |
-| [LAB_API_ChatGPT.ipynb](LAB_API_ChatGPT.ipynb)       | Full Jupyter notebook with code and outputs     |
-| [listings.json](listings.json)                       | Final output: generated listings for 5 products |
-| [product_images/15970.jpg](product_images/15970.jpg) | Image used in the example run below             |
+| [lab_proof_Carolina.ipynb](lab_proof_Carolina.ipynb)       | Full Jupyter notebook with code and outputs     |
+| `listings.json` (generated locally; not checked in)                       | Final output: generated listings for 5 products |
+| `product_images/15970.jpg` (original example; not checked in) | Image used in the example run below             |
 
 ---
 
@@ -31,7 +33,7 @@ The API key is read from a local `.env` file (listed in `.gitignore`, not commit
 
 **Input**
 
-- Image: [product_images/15970.jpg](product_images/15970.jpg)
+- Image: `product_images/15970.jpg` (original example; not checked in)
 - Product data (from the dataset): Turtle Check Men Navy Blue Shirt · Apparel > Topwear > Shirts · Navy Blue · Men · Fall · Casual
 - Price: €49.99 (sample value; the dataset has no prices)
 - Prompt sent to the API together with the image (first part):
@@ -85,7 +87,7 @@ Successful listings: 5
 Failed listings: 0
 ```
 
-All 5 listings are saved in [listings.json](listings.json), each with `id`, `name`, `status` and the generated `listing`.
+All 5 listings are saved in `listings.json` (generated locally; not checked in), each with `id`, `name`, `status` and the generated `listing`.
 
 ## Code (full Jupyter notebook export)
 
@@ -131,60 +133,32 @@ print(response.output_text)
 
 ```python
 # STEP 2: PREPARING THE DATA SET
-
-# Install: pip install datasets
-from datasets import load_dataset
-import requests
-from PIL import Image
-import pandas as pd
+# Local fallback: create products.json with id, name, category and image_path.
+import json
 from pathlib import Path
+import pandas as pd
+from product_listing_helpers import prepare_products
 
-# Load dataset from HuggingFace
 print("Loading product dataset...")
 try:
-    # Try loading the dataset
-    dataset = load_dataset("ashraq/fashion-product-images-small", split="train[:100]")  # First 100 samples
-    print(f"✓ Loaded {len(dataset)} products")
+    from datasets import load_dataset
+    dataset = load_dataset("ashraq/fashion-product-images-small", split="train[:100]")
+    products_data = list(dataset)
+    print(f"Loaded {len(products_data)} products")
+except Exception as error:
+    print(f"Dataset download failed ({type(error).__name__}); checking products.json.")
+    local_path = Path("products.json")
+    if not local_path.is_file():
+        raise RuntimeError(
+            "Dataset unavailable. Create products.json with real local image paths "
+            "and rerun this cell. See README.md for the format."
+        ) from None
+    products_data = json.loads(local_path.read_text(encoding="utf-8"))
+    if not isinstance(products_data, list):
+        raise ValueError("products.json must contain a JSON array.")
 
-    # Convert to pandas for easier manipulation
-    products_df = pd.DataFrame(dataset)
-    print(f"Dataset columns: {products_df.columns.tolist()}")
-
-except Exception as e:
-    print(f"⚠ Could not load HuggingFace dataset: {e}")
-    print("Using local images instead...")
-
-    # Alternative: Use local images
-    # Create a products.json file with product information
-    products_data = [
-        {
-            "id": 1,
-            "name": "Wireless Headphones",
-            "price": 79.99,
-            "category": "Electronics",
-            "image_path": "images/product1.jpg"
-        },
-        # Add more products...
-    ]
-
-    products_df = pd.DataFrame(products_data)
-
-# Create images directory
-images_dir = Path("product_images")
-images_dir.mkdir(exist_ok=True)
-
-# Save each product image to disk and record its path
-image_paths = []
-for _, row in products_df.iterrows():
-    path = images_dir / f"{row['id']}.jpg"
-    row["image"].convert("RGB").save(path)
-    image_paths.append(str(path))
-
-products_df["image_path"] = image_paths
-print(f"  Images saved to: {images_dir}/")
-
-print(f"\n✓ Dataset prepared!")
-print(f"  Total products: {len(products_df)}")
+products_df = pd.DataFrame(prepare_products(products_data))
+print(f"Dataset prepared: {len(products_df)} products")
 ```
 
     Loading product dataset...
@@ -320,66 +294,22 @@ print(test_prompt[:500] + "...")  # Show first 500 characters
 
     1. **Product Title** (catchy, SEO-friendly,...
 
-````python
+```python
 # STEP 5: Calling the ChatGPT API with Vision
-## Send image + text to the API, receive the response, parse the JSON
-
+# Shared helper handles image failures, empty responses and invalid listing JSON.
 import json
-from pathlib import Path
+from product_listing_helpers import generate_listing as _generate_listing
+
 
 def generate_listing(prompt, image_path, model="gpt-4o"):
-    """
-    Send a prompt + product image to the ChatGPT API
-    and return the listing as a dictionary.
-    """
-    # 1. Encode the image and build the data URL
-    image_b64 = encode_image_to_base64(image_path)
-    suffix = Path(image_path).suffix.lower().replace(".", "")
-    mime = "jpeg" if suffix in ("jpg", "jpeg") else suffix
-    image_url = f"data:image/{mime};base64,{image_b64}"
-
-    # 2. Call the API
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": image_url}}
-                    ]
-                }
-            ],
-            max_tokens=1000,
-            response_format={"type": "json_object"}
-        )
-    except Exception as e:
-        print(f"⚠ API call failed: {e}")
-        return None
-
-    # 3. Get the text of the response
-    raw_text = response.choices[0].message.content
-
-    # 4. Parse the JSON (strip ```json fences just in case)
-    cleaned = raw_text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`")
-        cleaned = cleaned.replace("json", "", 1).strip()
-
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        print("⚠ Could not parse JSON, returning raw text")
-        return {"raw_response": raw_text}
+    return _generate_listing(client, prompt, image_path, model=model)
 
 
 # Test with one product
 listing = generate_listing(test_prompt, row["image_path"])
-
 if listing:
     print(json.dumps(listing, indent=2, ensure_ascii=False))
-````
+```
 
 Output: see **Evidence** in the Example run section above.
 
